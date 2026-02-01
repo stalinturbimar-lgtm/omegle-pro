@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Video Omegle Pro</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body {
+    margin: 0;
+    background: #000;
+    color: white;
+    font-family: Arial;
+    text-align: center;
+}
+
+h2 {
+    padding: 10px;
+}
+
+#videos {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+video {
+    width: 45%;
+    max-width: 400px;
+    background: #111;
+    margin: 5px;
+    border-radius: 10px;
+}
+
+.controls {
+    margin: 10px;
+}
+
+button {
+    padding: 10px 14px;
+    margin: 5px;
+    border: none;
+    border-radius: 5px;
+    background: #3a5cff;
+    color: white;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #2e48cc;
+}
+
+.blur {
+    filter: blur(8px);
+}
+
+/* Móvil */
+@media (max-width: 600px) {
+    video {
+        width: 90%;
+    }
+}
+</style>
+</head>
+<body>
+
+<h2>Video Chat tipo Omegle 🎥</h2>
+
+<div id="videos">
+    <video id="local" autoplay muted></video>
+    <video id="remote" autoplay></video>
+</div>
+
+<div class="controls">
+    <button onclick="toggleMute()">🔇 Mute</button>
+    <button onclick="toggleCamera()">📷 Cámara</button>
+    <button onclick="toggleBlur()">🎭 Blur</button>
+    <button onclick="report()">🚫 Reportar</button>
+    <button onclick="next()">➡️ Siguiente</button>
+</div>
+
+<script>
+let pc, userId;
+let localStream;
+let muted = false;
+let cameraOff = false;
+let blurred = false;
+
+const localVideo = document.getElementById("local");
+const remoteVideo = document.getElementById("remote");
+
+navigator.mediaDevices.getUserMedia({ video:true, audio:true })
+.then(stream => {
+    localStream = stream;
+    localVideo.srcObject = stream;
+
+    fetch("/connect", { method:"POST" })
+    .then(r => r.text())
+    .then(id => {
+        userId = id;
+        startPeer();
+        poll();
+    });
+});
+
+function startPeer() {
+    pc = new RTCPeerConnection();
+
+    localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+
+    pc.ontrack = e => remoteVideo.srcObject = e.streams[0];
+
+    pc.onicecandidate = e => {
+        if (e.candidate) sendSignal({ ice: e.candidate });
+    };
+
+    pc.createOffer().then(o => {
+        pc.setLocalDescription(o);
+        sendSignal({ offer: o });
+    });
+}
+
+function sendSignal(data) {
+    fetch("/signal", {
+        method:"POST",
+        headers:{
+            "Content-Type":"application/json",
+            "User-ID":userId
+        },
+        body: JSON.stringify(data)
+    });
+}
+
+function poll() {
+    fetch("/poll", { headers:{ "User-ID":userId } })
+    .then(r => r.json())
+    .then(msgs => {
+        msgs.forEach(m => {
+            if (m.offer) {
+                pc.setRemoteDescription(m.offer);
+                pc.createAnswer().then(a => {
+                    pc.setLocalDescription(a);
+                    sendSignal({ answer:a });
+                });
+            }
+            if (m.answer) pc.setRemoteDescription(m.answer);
+            if (m.ice) pc.addIceCandidate(m.ice);
+        });
+        setTimeout(poll, 500);
+    });
+}
+
+/* 🔇 MUTE */
+function toggleMute() {
+    muted = !muted;
+    localStream.getAudioTracks()[0].enabled = !muted;
+}
+
+/* 📷 CAMARA */
+function toggleCamera() {
+    cameraOff = !cameraOff;
+    localStream.getVideoTracks()[0].enabled = !cameraOff;
+}
+
+/* 🎭 BLUR */
+function toggleBlur() {
+    blurred = !blurred;
+    localVideo.classList.toggle("blur");
+}
+
+/* 🚫 REPORTAR */
+function report() {
+    alert("Usuario reportado 🚫 (simulado)");
+    next();
+}
+
+/* ➡️ SIGUIENTE */
+function next() {
+    location.reload();
+}
+</script>
+
+</body>
+</html>
+
